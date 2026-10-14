@@ -10,6 +10,8 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 
 const BUDS_MAC = 'A0:AC:69:09:0F:35';
 const BUDS_INTERVAL_SECONDS = 300;
+const BUDS_RETRY_SECONDS = 5;
+const BUDS_RETRIES = 6;
 const LOW = 20;
 
 const ICONS = {
@@ -44,7 +46,10 @@ export default class PeripheralBatteryExtension extends Extension {
 
         this._budsProxy = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, null,
             'org.bluez', `/org/bluez/hci0/dev_${BUDS_MAC.replaceAll(':', '_')}`, 'org.bluez.Device1', null);
-        this._budsSignal = this._budsProxy.connect('g-properties-changed', () => this._refreshBuds());
+        this._budsSignal = this._budsProxy.connect('g-properties-changed', (_p, changed) => {
+            if (changed.lookup_value('Connected', null))
+                this._refreshBuds(BUDS_RETRIES);
+        });
         this._timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, BUDS_INTERVAL_SECONDS, () => {
             this._refreshBuds();
             return GLib.SOURCE_CONTINUE;
@@ -54,6 +59,7 @@ export default class PeripheralBatteryExtension extends Extension {
 
     disable() {
         GLib.source_remove(this._timer);
+        this._cancelRetry();
         this._budsProxy.disconnect(this._budsSignal);
         this._clientSignals.forEach(id => this._client.disconnect(id));
         this._deviceSignals.forEach((id, device) => device.disconnect(id));
@@ -71,7 +77,14 @@ export default class PeripheralBatteryExtension extends Extension {
         this._render();
     }
 
-    _refreshBuds() {
+    _cancelRetry() {
+        if (this._retry)
+            GLib.source_remove(this._retry);
+        this._retry = 0;
+    }
+
+    _refreshBuds(retries = 0) {
+        this._cancelRetry();
         if (!this._budsProxy.get_cached_property('Connected')?.unpack()) {
             this._buds = null;
             this._render();
@@ -86,6 +99,13 @@ export default class PeripheralBatteryExtension extends Extension {
             if (p.get_successful()) {
                 const [left, right, box] = out.trim().split(' ').map(Number);
                 this._buds = {left, right, box};
+            } else if (retries > 0) {
+                // The Buds refuse RFCOMM for a few seconds right after connecting.
+                this._retry = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, BUDS_RETRY_SECONDS, () => {
+                    this._retry = 0;
+                    this._refreshBuds(retries - 1);
+                    return GLib.SOURCE_REMOVE;
+                });
             }
             this._render();
         });
