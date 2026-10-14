@@ -1,0 +1,6 @@
+{
+  "uuid": "periph-battery@rafael",
+  "name": "Peripheral Battery",
+  "description": "Battery of wireless mouse, keyboard and Galaxy Buds in the top bar",
+  "shell-version": ["46"]
+}
