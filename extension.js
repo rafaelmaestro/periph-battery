@@ -19,6 +19,13 @@ const ICONS = {
     [UPowerGlib.DeviceKind.HEADPHONES]: '🎧',
 };
 
+// UPower reports some Logitech HID++ mice (e.g. MX Master 3S) as KEYBOARD.
+function iconFor(device) {
+    if (/master|mouse|anywhere/i.test(device.model))
+        return ICONS[UPowerGlib.DeviceKind.MOUSE];
+    return ICONS[device.kind];
+}
+
 export default class PeripheralBatteryExtension extends Extension {
     enable() {
         this._button = new PanelMenu.Button(0.0, this.metadata.name, true);
@@ -88,7 +95,7 @@ export default class PeripheralBatteryExtension extends Extension {
         this._box.destroy_all_children();
         for (const device of this._deviceSignals.keys()) {
             if (device.is_present)
-                this._addItem(`${ICONS[device.kind]} ${Math.round(device.percentage)}%`, device.percentage, device.model);
+                this._addItem(`${iconFor(device)} ${Math.round(device.percentage)}%`, device.percentage, device.model);
         }
         if (this._buds) {
             const {left, right, box} = this._buds;
